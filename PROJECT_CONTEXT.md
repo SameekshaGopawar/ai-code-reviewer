@@ -211,15 +211,14 @@ Two GitHub Actions workflows were added under `.github/workflows/`:
   (the `gh` CLI ships preinstalled on GitHub-hosted runners and auto-authenticates
   via `GH_TOKEN`)
 
-**Not yet done / required before this actually works on GitHub:**
-- The repo has no GitHub remote yet — needs to be pushed to GitHub for either
-  workflow to actually run.
-- An `OPENAI_API_KEY` repository secret needs to be added on GitHub (Settings →
-  Secrets and variables → Actions) for `ai-review.yml` to work; `ci.yml` doesn't
-  need it since it never calls the LLM.
-- Not yet tested end-to-end against a real GitHub-hosted PR (only validated
-  locally: YAML syntax checked with `yaml.safe_load`, and the pure-logic parts of
-  `post_pr_review.py` — comment formatting, diff file filtering — are unit tested).
+**Verified live on GitHub (2026-07-26):** repo pushed to
+`github.com/SameekshaGopawar/ai-code-reviewer` (private), `OPENAI_API_KEY` secret
+added, and a real test PR (#1, since merged + branch deleted) confirmed both
+`ci.yml` and `ai-review.yml` run green — `ai-review.yml` posted a genuine
+GPT-4o-generated review comment on the PR reviewing `sample_code/logistic_regression.py`,
+catching the mutable-default-argument bug, variable shadowing, and missing
+docstrings, exactly as designed. The whole pipeline is confirmed working
+end-to-end on GitHub, not just locally.
 
 ## Additional sample files (added 2026-07-26)
 Two more files were added under `sample_code/` to make manual testing more relatable
@@ -274,25 +273,19 @@ Requires selecting the project's own venv as the Jupyter kernel in VS Code (kern
 # Next Steps
 
 ## Immediate next task
-Everything is built and locally verified (pipeline, 22-test suite at 97% coverage,
-initial git commit, CI workflow, PR-review workflow + composite action + script).
-**What's left is entirely on GitHub's side, not more code:**
-1. Create a GitHub repo and push this local repo to it (`git remote add origin ...`,
-   `git push -u origin master`).
-2. Add an `OPENAI_API_KEY` repository secret: GitHub repo → Settings → Secrets and
-   variables → Actions → "New repository secret".
-3. Open a test PR (e.g., branch off, tweak a sample file, push, open PR) to confirm
-   both `ci.yml` and `ai-review.yml` actually run green and the AI review comment
-   posts correctly. This is the one part that could not be tested locally.
+The project is complete and verified end-to-end (pipeline, 22-test suite at 97%
+coverage, git history, CI, and PR automation all confirmed working live on
+GitHub — see "CI + PR automation" above). There is no blocking next task.
+If resuming work, the "nice-to-haves" in the roadmap below are the logical
+next targets, but none of them are required for the project to be considered done.
 
 ## Remaining roadmap
 1. ~~Automated tests~~ — done (22 passing pytest tests, 97% coverage).
 2. ~~Initial git commit~~ — done.
-3. ~~GitHub Actions CI~~ — done (`.github/workflows/ci.yml`), needs a GitHub push
-   to actually run (see "Immediate next task").
-4. ~~PR automation~~ — done (`.github/workflows/ai-review.yml` +
+3. ~~GitHub Actions CI~~ — done and verified live (`.github/workflows/ci.yml`).
+4. ~~PR automation~~ — done and verified live (`.github/workflows/ai-review.yml` +
    `.github/actions/ai-code-review/action.yml` + `scripts/post_pr_review.py`),
-   same caveat — needs a GitHub push + a real PR to verify end-to-end.
+   confirmed posting real AI review comments on an actual GitHub PR.
 5. **Optional dashboard** — intentionally skipped/deprioritized (a CLI + working
    GitHub Action already tells a stronger portfolio story than a hosted dashboard
    for this kind of tool — see conversation history for the reasoning).
@@ -300,6 +293,11 @@ initial git commit, CI workflow, PR-review workflow + composite action + script)
    `--review` mode (currently single-file only), make the `MODEL` constant in
    `llm_reviewer.py` configurable, add rate-limit/retry handling around the OpenAI
    call.
+
+## Repo location
+Pushed to `github.com/SameekshaGopawar/ai-code-reviewer` (private). Local remote
+`origin` already points there; `master` is the only branch (test branch used for
+GitHub Actions verification was merged and deleted).
 
 # Important Design Decisions
 
