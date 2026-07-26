@@ -54,7 +54,24 @@ ai-code-reviewer/
 ├── demo.ipynb              # Jupyter notebook walking through the pipeline step-by-step
 │                            # (read file -> analyze() -> review_file() -> pretty print);
 │                            # TARGET variable in the first cell picks which file to review
-├── requirements.txt        # pylint, flake8, bandit, openai, python-dotenv, pytest
+├── scripts/
+│   └── post_pr_review.py   # reviews changed .py files in a PR diff, posts one
+│                           # combined comment via `gh pr comment`
+├── .github/
+│   ├── workflows/
+│   │   ├── ci.yml          # runs lint (informational) + pytest w/ coverage on
+│   │   │                   # push/PR to main or master
+│   │   └── ai-review.yml   # on pull_request: checks out full history, calls the
+│   │                       # local composite action below to post an AI review
+│   │                       # comment on the PR
+│   └── actions/
+│       └── ai-code-review/
+│           └── action.yml  # composite action: sets up Python, installs deps,
+│                            # runs scripts/post_pr_review.py with the PR's
+│                            # base ref + number and the OPENAI_API_KEY /
+│                            # GITHUB_TOKEN secrets wired in as env vars
+├── requirements.txt        # pylint, flake8, bandit, openai, python-dotenv, pytest,
+│                            # pytest-cov
 ├── .env / .env.example    # OPENAI_API_KEY (real .env is gitignored)
 ├── .gitignore
 └── venv/                  # local virtualenv (gitignored)
@@ -160,6 +177,50 @@ Result: **97% overall** (118 statements, 3 missed) — 19 tests, all passing.
   meaningfully testable/necessary to cover)
 - `llm_reviewer.py`: 100%
 
+(Coverage command only measures `ai_code_reviewer/`; `scripts/post_pr_review.py`
+has its own tests in `tests/test_post_pr_review.py` covering the pure formatting
+logic and the git-diff file-filtering logic, 22 tests total across the whole suite.)
+
+## CI + PR automation (added 2026-07-26)
+Two GitHub Actions workflows were added under `.github/workflows/`:
+
+1. **`ci.yml`** — runs on every push to `main`/`master` and on every PR. Installs
+   deps, runs pylint/flake8/bandit as informational-only (`--exit-zero`, so style
+   nits don't fail the build — see "Important Design Decisions" below for why),
+   then runs `pytest tests/ -v --cov=ai_code_reviewer --cov-report=term-missing`.
+   This job is what should actually gate merges (it fails if tests fail).
+
+2. **`ai-review.yml`** — runs on `pull_request` (opened/synchronize/reopened).
+   Checks out full git history (`fetch-depth: 0`, needed to diff against the base
+   branch) and calls a local composite action, `.github/actions/ai-code-review/`,
+   which:
+   - Installs `requirements.txt`
+   - Runs `scripts/post_pr_review.py` with `OPENAI_API_KEY` (from a repo secret)
+     and `GH_TOKEN` (from the workflow's automatic `secrets.GITHUB_TOKEN`) as
+     env vars, along with the PR's base ref and number from the GitHub Actions
+     event context (`github.event.pull_request.*`)
+
+`scripts/post_pr_review.py` itself:
+- Runs `git fetch origin <base_ref>` then `git diff --name-only --diff-filter=d
+  origin/<base_ref>...HEAD -- '*.py'` to get the list of changed (non-deleted)
+  Python files in the PR
+- Calls `review_file()` (the same function the CLI uses) on each changed file
+- Formats all results into one Markdown comment (severity emoji + sorted
+  critical → warning → suggestion, grouped per file under a `### \`path\`` heading)
+- Posts it as a single PR comment via `gh pr comment <number> --body-file ...`
+  (the `gh` CLI ships preinstalled on GitHub-hosted runners and auto-authenticates
+  via `GH_TOKEN`)
+
+**Not yet done / required before this actually works on GitHub:**
+- The repo has no GitHub remote yet — needs to be pushed to GitHub for either
+  workflow to actually run.
+- An `OPENAI_API_KEY` repository secret needs to be added on GitHub (Settings →
+  Secrets and variables → Actions) for `ai-review.yml` to work; `ci.yml` doesn't
+  need it since it never calls the LLM.
+- Not yet tested end-to-end against a real GitHub-hosted PR (only validated
+  locally: YAML syntax checked with `yaml.safe_load`, and the pure-logic parts of
+  `post_pr_review.py` — comment formatting, diff file filtering — are unit tested).
+
 ## Additional sample files (added 2026-07-26)
 Two more files were added under `sample_code/` to make manual testing more relatable
 for ML-focused review scenarios (in addition to `example.py`):
@@ -202,35 +263,43 @@ Requires selecting the project's own venv as the Jupyter kernel in VS Code (kern
 - No support for reviewing multiple files/directories in `--review` mode (the LLM
   review path is explicitly single-file only; `analyze()` itself does support a
   directory target since it just passes `target` through to each tool).
-- No CI (GitHub Actions) configured.
-- No PR-automation (e.g., posting review comments to a GitHub PR).
 - No caching/rate-limit handling around the OpenAI call.
-- No dashboard or any UI beyond the CLI.
-- Repo has no commits yet (`git log` shows "No commits yet" on `master`) — all
-  files are currently untracked. Worth committing now that there's a working
-  pipeline + passing test suite.
+- No dashboard or any UI beyond the CLI (intentionally deprioritized — see
+  "Remaining roadmap" below).
+- CI (`ci.yml`) and PR automation (`ai-review.yml`) workflows are written and
+  locally validated (YAML syntax + unit tests on the pure logic), **but not yet
+  pushed to GitHub or run for real** — the repo has no GitHub remote yet. This is
+  the actual next step, see "Immediate next task."
 
 # Next Steps
 
 ## Immediate next task
-Automated tests are now done (see "Automated test suite" above). The next task is:
-**make an initial git commit** — the repo currently has zero commits, which blocks
-setting up GitHub Actions (needs a remote history to run against). Then set up
-**GitHub Actions CI**: run pylint/flake8/bandit + `python -m pytest tests/ -v` on
-push/PR; consider a separate job that runs `--review` only on manual dispatch (to
-avoid spending OpenAI API credits on every push).
+Everything is built and locally verified (pipeline, 22-test suite at 97% coverage,
+initial git commit, CI workflow, PR-review workflow + composite action + script).
+**What's left is entirely on GitHub's side, not more code:**
+1. Create a GitHub repo and push this local repo to it (`git remote add origin ...`,
+   `git push -u origin master`).
+2. Add an `OPENAI_API_KEY` repository secret: GitHub repo → Settings → Secrets and
+   variables → Actions → "New repository secret".
+3. Open a test PR (e.g., branch off, tweak a sample file, push, open PR) to confirm
+   both `ci.yml` and `ai-review.yml` actually run green and the AI review comment
+   posts correctly. This is the one part that could not be tested locally.
 
 ## Remaining roadmap
-1. ~~Automated tests~~ — done (15 passing pytest tests, see above).
-2. Initial git commit + **GitHub Actions CI** (see "Immediate next task" above).
-3. **PR automation** — wire the `--review` output into a GitHub Action that posts
-   the summary + comments back onto a PR (e.g., via `gh pr comment` or the GitHub
-   API), likely triggered on `pull_request` events, diffing only changed files.
-4. **Optional dashboard** — a small web UI (or static site) to browse past review
-   runs; would need a persistence layer (currently there is none — every run is
-   stateless and prints/writes JSON only).
-5. Consider: support directory/multi-file targets in `--review` mode (currently
-   single-file only), and make the `MODEL` constant in `llm_reviewer.py` configurable.
+1. ~~Automated tests~~ — done (22 passing pytest tests, 97% coverage).
+2. ~~Initial git commit~~ — done.
+3. ~~GitHub Actions CI~~ — done (`.github/workflows/ci.yml`), needs a GitHub push
+   to actually run (see "Immediate next task").
+4. ~~PR automation~~ — done (`.github/workflows/ai-review.yml` +
+   `.github/actions/ai-code-review/action.yml` + `scripts/post_pr_review.py`),
+   same caveat — needs a GitHub push + a real PR to verify end-to-end.
+5. **Optional dashboard** — intentionally skipped/deprioritized (a CLI + working
+   GitHub Action already tells a stronger portfolio story than a hosted dashboard
+   for this kind of tool — see conversation history for the reasoning).
+6. Nice-to-haves if picked back up later: support directory/multi-file targets in
+   `--review` mode (currently single-file only), make the `MODEL` constant in
+   `llm_reviewer.py` configurable, add rate-limit/retry handling around the OpenAI
+   call.
 
 # Important Design Decisions
 

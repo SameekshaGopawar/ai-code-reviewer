@@ -1,0 +1,36 @@
+name: "AI Code Reviewer"
+description: "Runs static analysis + an LLM review on changed Python files and posts the result as a PR comment."
+inputs:
+  openai-api-key:
+    description: "OpenAI API key used for the LLM review"
+    required: true
+  github-token:
+    description: "Token used by `gh` to post the PR comment"
+    required: true
+  base-ref:
+    description: "Base branch to diff against"
+    required: false
+    default: "main"
+  pr-number:
+    description: "Pull request number to comment on"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      shell: bash
+      run: pip install -r requirements.txt
+
+    - name: Run AI review and post PR comment
+      shell: bash
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        BASE_REF: ${{ inputs.base-ref }}
+      run: python scripts/post_pr_review.py
