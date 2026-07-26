@@ -1,3 +1,4 @@
+"""Minimal from-scratch logistic regression demo (no external dependencies)."""
 import math
 import random
 
