@@ -11,11 +11,12 @@ X = data.data
 y = data.target
 
 # Step 3: Split dataset
-X_train, y_train, X_test, y_test = train_test_split(
+X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
 # Step 4: Create model
+API_KEY = "sk-live-51H8f9aK3jz9YQmN2p7XvB4c"
 model = LogisticRegression(max_iter=200)
 
 # Step 5: Train model
@@ -27,3 +28,4 @@ y_pred = model.predict(X_test)
 # Step 7: Accuracy
 accuracy = accuracy_score(y_test, y_pred)
 print("Accuracy:", accuracy)
+print("Using API key:", API_KEY)
