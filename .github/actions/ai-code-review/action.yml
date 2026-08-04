@@ -24,7 +24,13 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: pip install -r requirements.txt
+      # Installs the reviewer's own dependencies (openai, pylint, flake8, bandit, ...)
+      # from its own repo, not the calling repo's requirements.txt -- this action can
+      # be invoked either from within this repo or via
+      # `uses: SameekshaGopawar/ai-code-reviewer/.github/actions/ai-code-review@master`
+      # from a different repo, so paths to this action's own files must be resolved
+      # via github.action_path rather than assumed relative to the caller's workspace.
+      run: pip install -r "${{ github.action_path }}/../../../requirements.txt"
 
     - name: Run AI review and post PR comment
       shell: bash
@@ -33,4 +39,7 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ inputs.pr-number }}
         BASE_REF: ${{ inputs.base-ref }}
-      run: python scripts/post_pr_review.py
+      # Runs against the calling repo's checked-out working directory (correct --
+      # that's where the PR's actual git history/diff lives), but loads the script
+      # itself from this action's own repo.
+      run: python "${{ github.action_path }}/../../../scripts/post_pr_review.py"
